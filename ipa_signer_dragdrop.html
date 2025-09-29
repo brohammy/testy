@@ -984,131 +984,141 @@
             });
         }
         
-        async function handleFormSubmission() {
-            const signButton = document.getElementById('signButton');
-            const progressContainer = document.getElementById('progressContainer');
-            const resultContainer = document.getElementById('resultContainer');
-            const errorContainer = document.getElementById('errorContainer');
-            
-            // Reset UI
-            resultContainer.style.display = 'none';
-            errorContainer.style.display = 'none';
-            progressContainer.style.display = 'block';
-            signButton.disabled = true;
-            
-            try {
-                // Validate required fields
-                validateForm();
-                
-                // Prepare form data
-                const formData = await prepareFormData();
-                
-                // Simulate signing process (replace with actual API call)
-                await simulateSigningProcess();
-                
-                // Show success
-                showSuccess();
-                
-            } catch (error) {
-                showError(error.message);
-            } finally {
-                progressContainer.style.display = 'none';
-                signButton.disabled = false;
-            }
+       async function handleFormSubmission() {
+    const signButton = document.getElementById('signButton');
+    const progressContainer = document.getElementById('progressContainer');
+    const resultContainer = document.getElementById('resultContainer');
+    const errorContainer = document.getElementById('errorContainer');
+    
+    // Reset UI
+    resultContainer.style.display = 'none';
+    errorContainer.style.display = 'none';
+    progressContainer.style.display = 'block';
+    signButton.disabled = true;
+    
+    try {
+        // Validate required fields
+        validateForm();
+        
+        // Prepare form data for your server
+        const formData = await prepareFormDataForServer();
+        
+        // Send to your server.ts backend
+        await sendToServer(formData);
+        
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        progressContainer.style.display = 'none';
+        signButton.disabled = false;
+    }
+}
+
+async function prepareFormDataForServer() {
+    const formData = new FormData();
+    
+    // Get the selected app (you'll need to add this to your HTML)
+    const appSelect = document.getElementById('appSelect') || { value: 'Esign' }; // Default to Esign
+    
+    // Create a ZIP file containing P12 and mobileprovision
+    const zipBlob = await createCertificateZip();
+    formData.append('zip', zipBlob, 'certificates.zip');
+    formData.append('password', document.getElementById('password').value || '');
+    formData.append('app', appSelect.value); // This matches your server.ts expectation
+    
+    return formData;
+}
+
+async function createCertificateZip() {
+    // Simple client-side ZIP creation (for small files)
+    // For larger files, you might want to handle this server-side
+    const JSZip = await loadJSZip(); // You'll need to include JSZip library
+    
+    const zip = new JSZip();
+    
+    if (selectedFiles.p12) {
+        zip.file(selectedFiles.p12.name, selectedFiles.p12);
+    }
+    
+    if (selectedFiles.mobileprovision) {
+        zip.file(selectedFiles.mobileprovision.name, selectedFiles.mobileprovision);
+    }
+    
+    return await zip.generateAsync({type: 'blob'});
+}
+
+async function loadJSZip() {
+    // Load JSZip library dynamically
+    if (typeof JSZip === 'undefined') {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    }
+    return JSZip;
+}
+
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+async function sendToServer(formData) {
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    
+    try {
+        progressText.textContent = 'Uploading certificates...';
+        progressFill.style.width = '30%';
+        
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Server error');
         }
         
-        function validateForm() {
-            const activeSource = document.querySelector('.ipa-source-btn.active').getAttribute('data-source');
-            
-            if (activeSource === 'file') {
-                if (!selectedFiles.ipa) {
-                    throw new Error('Please select an IPA file');
-                }
-            } else {
-                const ipaUrl = document.getElementById('ipaUrl').value;
-                if (!ipaUrl) {
-                    throw new Error('Please enter an IPA URL');
-                }
-            }
-            
-            if (!selectedFiles.p12) {
-                throw new Error('Please select a P12 certificate file');
-            }
-            
-            if (!selectedFiles.mobileprovision) {
-                throw new Error('Please select a mobile provision file');
-            }
-        }
+        progressText.textContent = 'Signing app...';
+        progressFill.style.width = '70%';
         
-        async function prepareFormData() {
-            const formData = new FormData();
-            
-            // Add files
-            if (selectedFiles.ipa) formData.append('ipa', selectedFiles.ipa);
-            if (selectedFiles.p12) formData.append('p12', selectedFiles.p12);
-            if (selectedFiles.mobileprovision) formData.append('mobileprovision', selectedFiles.mobileprovision);
-            
-            // Add form fields
-            const fields = ['ipaUrl', 'password', 'bundleId', 'bundleName', 'bundleVersion', 'buildVersion', 'customEntitlements'];
-            fields.forEach(field => {
-                const element = document.getElementById(field);
-                if (element && element.value) {
-                    formData.append(field, element.value);
-                }
-            });
-            
-            // Add checkboxes
-            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    formData.append(checkbox.id, 'true');
-                }
-            });
-            
-            return formData;
-        }
+        const result = await response.json();
         
-        async function simulateSigningProcess() {
-            const progressFill = document.getElementById('progressFill');
-            const progressText = document.getElementById('progressText');
-            
-            const steps = [
-                { text: 'Uploading files...', progress: 20 },
-                { text: 'Extracting IPA...', progress: 40 },
-                { text: 'Processing certificates...', progress: 60 },
-                { text: 'Applying modifications...', progress: 80 },
-                { text: 'Signing application...', progress: 90 },
-                { text: 'Finalizing...', progress: 100 }
-            ];
-            
-            for (let step of steps) {
-                progressText.textContent = step.text;
-                progressFill.style.width = step.progress + '%';
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
+        progressText.textContent = 'Complete!';
+        progressFill.style.width = '100%';
         
-        function showSuccess() {
-            const resultContainer = document.getElementById('resultContainer');
-            const resultFileName = document.getElementById('resultFileName');
-            const resultFileSize = document.getElementById('resultFileSize');
-            const resultBundleId = document.getElementById('resultBundleId');
-            const resultVersion = document.getElementById('resultVersion');
-            
-            // Update result info (this would come from the API response)
-            resultFileName.textContent = selectedFiles.ipa ? selectedFiles.ipa.name.replace('.ipa', '_signed.ipa') : 'signed_app.ipa';
-            resultFileSize.textContent = selectedFiles.ipa ? formatFileSize(selectedFiles.ipa.size * 1.1) : '15.2 MB';
-            resultBundleId.textContent = document.getElementById('bundleId').value || 'com.example.app';
-            resultVersion.textContent = document.getElementById('bundleVersion').value || '1.0.0';
-            
-            resultContainer.style.display = 'block';
-        }
+        // Show success with the links from server
+        showServerSuccess(result);
         
-        function showError(message) {
-            const errorContainer = document.getElementById('errorContainer');
-            const errorMessage = document.getElementById('errorMessage');
-            
-            errorMessage.textContent = message;
-            errorContainer.style.display = 'block';
-        }
-    </script> 
+    } catch (error) {
+        throw new Error(`Signing failed: ${error.message}`);
+    }
+}
+
+function showServerSuccess(result) {
+    const resultContainer = document.getElementById('resultContainer');
+    const resultFileName = document.getElementById('resultFileName');
+    const downloadLink = document.getElementById('downloadLink');
+    const manifestLink = document.getElementById('manifestLink');
+    
+    // Update result info
+    resultFileName.textContent = 'Signed App';
+    
+    // Update links
+    if (result.tinyUrl) {
+        downloadLink.href = result.tinyUrl;
+        downloadLink.textContent = 'Install App (Short Link)';
+    } else {
+        downloadLink.href = result.otaLink;
+        downloadLink.textContent = 'Install App';
+    }
+    
+    manifestLink.href = result.otaLink;
+    manifestLink.textContent = 'OTA Manifest';
+    
+    resultContainer.style.display = 'block';
+}
